@@ -9,6 +9,10 @@ import random
 import string
 import logging
 from discord import app_commands
+import discord
+from discord.ext import commands, tasks
+import aiohttp
+import asyncio
 
 # ตั้งค่า Intents
 intents = discord.Intents.default()
@@ -665,6 +669,46 @@ async def on_ready():
     bot.add_view(ContactView())
     bot.add_view(CloseTicketView())
     print(f"✅ บอทออนไลน์แล้วในชื่อ: {bot.user.name}")
+
+intents = discord.Intents.default()
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+active_tasks = {}
+
+def make_ping_task(url: str, minutes: int):
+    @tasks.loop(minutes=minutes)
+    async def ping_task():
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(url, timeout=15) as response:
+                    print(f"🟢 [Keep-Alive] กดลิงก์ {url} สำเร็จ! Status: {response.status}")
+            except Exception as e:
+                print(f"❌ [Keep-Alive] กดลิงก์ {url} ไม่สำเร็จ: {e}")
+    return ping_task
+
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    print(f"✅ บอทออนไลน์แล้วในชื่อ: {bot.user.name}")
+
+@bot.tree.command(name="s", description="สั่งให้บอทคอยกดเข้าลิงค์แอปทุกๆ กี่นาที")
+@app_commands.describe(
+    url="ลิงก์เว็บไซต์แอปของคุณ",
+    minutes="ให้บอทกดทุกๆ กี่นาที"
+)
+async def s(interaction: discord.Interaction, url: str, minutes: int):
+    if minutes <= 0:
+        await interaction.response.send_message("❌ กรุณาระบุจำนวนนาทีมากกว่า 0 ครับ", ephemeral=True)
+        return
+
+    if url in active_tasks:
+        active_tasks[url].cancel()
+
+    new_task = make_ping_task(url, minutes)
+    active_tasks[url] = new_task
+    new_task.start()
+
+    await interaction.response.send_message(f"✅ จัดการให้เรียบร้อย! บอทจะคอยยิงกดลิงก์ `{url}` ทุกๆ **{minutes} นาที** แบบรัวๆ ไม่มีหลับแน่นอน", ephemeral=True)
 
 bot.run(“-”)
 
