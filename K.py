@@ -552,10 +552,6 @@ async def k(interaction: discord.Interaction, channel_id: str, message: str):
     except Exception:
         await interaction.response.send_message("❌ ไม่สามารถส่งข้อความได้ กรุณาตรวจสอบ ID ช่องและสิทธิ์ของบอท", ephemeral=True)
 
-import discord
-from discord.ext import commands
-import datetime
-
 # ตั้งค่า Intents
 intents = discord.Intents.default()
 intents.message_content = True
