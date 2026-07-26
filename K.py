@@ -552,7 +552,7 @@ async def k(interaction: discord.Interaction, channel_id: str, message: str):
     except Exception:
         await interaction.response.send_message("❌ ไม่สามารถส่งข้อความได้ กรุณาตรวจสอบ ID ช่องและสิทธิ์ของบอท", ephemeral=True)
 
-# ตั้งค่า Intents
+# ตั้งค่า Intents ทั้งหมดที่จำเป็น (รวมระบบ Guilds และ Message Content)
 intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
@@ -562,7 +562,10 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 # 🛑 ใส่ User ID ของคุณ (ที่เป็นแอดมินรับแจ้งเตือน) ตรงนี้
 OWNER_ID = 1367755286839955528 
 
-# --- ปุ่มยกเลิกห้อง (สำหรับผู้ใช้) ---
+# เก็บงานรัน Keep-Alive (key: url, value: task object)
+active_tasks = {}
+
+# --- 1. ระบบ Ticket: ปุ่มปิดห้อง ---
 class CloseTicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -571,12 +574,11 @@ class CloseTicketView(discord.ui.View):
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("❌ กำลังปิดและลบห้องนี้...", ephemeral=True)
         try:
-            # สั่งลบช่องแชททันทีโดยไม่ต้องรอ
             await interaction.channel.delete(reason="ผู้ใช้กดปิดห้องสนทนา")
         except:
             pass
 
-# --- ปุ่มหน้าต่างติดต่อแอดมิน (หลัก) ---
+# --- 2. ระบบ Ticket: ปุ่มกดติดต่อแอดมิน ---
 class ContactView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -586,16 +588,13 @@ class ContactView(discord.ui.View):
         guild = interaction.guild
         user = interaction.user
 
-        # ป้องกันการสร้างห้องซ้ำ (เช็คว่ามีห้องชื่อ ticket-ชื่อผู้ใช้ อยู่แล้วหรือยัง)
         existing_channel = discord.utils.get(guild.text_channels, name=f"ticket-{user.name.lower()}")
         if existing_channel:
             await interaction.response.send_message(f"❌ คุณมีห้องสนทนาเปิดอยู่แล้ว: {existing_channel.mention}", ephemeral=True)
             return
 
-        # ดึงข้อมูล Owner (แอดมิน)
         owner = guild.get_member(OWNER_ID)
         
-        # ตั้งค่าสิทธิ์การมองเห็นช่อง (เห็นเฉพาะ แอดมิน, ผู้ใช้ที่กด, และตัวบอท)
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(read_messages=False),
             user: discord.PermissionOverwrite(read_messages=True, send_messages=True, view_channel=True),
@@ -606,7 +605,6 @@ class ContactView(discord.ui.View):
             overwrites[owner] = discord.PermissionOverwrite(read_messages=True, send_messages=True, view_channel=True)
 
         try:
-            # สร้างห้องใหม่ในหมวดหมู่เดิม หรือสร้างใหม่ด้านบนสุด
             category = interaction.channel.category
             ticket_channel = await guild.create_text_channel(
                 name=f"ticket-{user.name}",
@@ -615,7 +613,6 @@ class ContactView(discord.ui.View):
                 topic=f"Ticket ของ {user} (ID: {user.id})"
             )
 
-            # ส่งข้อความต้อนรับในห้อง Ticket พร้อมปุ่มยกเลิก
             embed = discord.Embed(
                 title="🎫 ระบบติดต่อแอดมิน",
                 description=f"สวัสดีคุณ {user.mention} กรุณาพิมพ์ปัญหาหรือข้อสงสัยของคุณไว้ได้เลย เดี๋ยวแอดมินจะรีบเข้ามาตอบครับ",
@@ -623,7 +620,6 @@ class ContactView(discord.ui.View):
             )
             await ticket_channel.send(content=f"{user.mention} <@!{OWNER_ID}>", embed=embed, view=CloseTicketView())
 
-            # แจ้งเตือนแอดมินส่วนตัว (DM)
             if owner:
                 try:
                     dm_embed = discord.Embed(
@@ -633,18 +629,16 @@ class ContactView(discord.ui.View):
                     )
                     await owner.send(embed=dm_embed)
                 except:
-                    pass # เผื่อกรณีแอดมินปิดรับ DM
+                    pass
 
-            # ตอบกลับผู้ใช้ว่าสร้างห้องสำเร็จ
             await interaction.response.send_message(f"✅ สร้างห้องส่วนตัวให้เรียบร้อยแล้ว: {ticket_channel.mention}", ephemeral=True)
 
         except Exception as e:
             await interaction.response.send_message(f"❌ เกิดข้อผิดพลาดในการสร้างห้อง: {e}", ephemeral=True)
 
-# --- คำสั่ง !c สำหรับเรียกหน้าต่างติดต่อ ---
+# --- คำสั่ง !c สำหรับเรียกหน้าต่างติดต่อแอดมิน ---
 @bot.command()
 async def c(ctx):
-    # ลบข้อความคำสั่ง !c ทิ้งเพื่อความสะอาด
     try:
         await ctx.message.delete()
     except:
@@ -659,18 +653,7 @@ async def c(ctx):
     
     await ctx.send(embed=embed, view=ContactView())
 
-@bot.event
-async def on_ready():
-    # ลงทะเบียน View แบบ Persistent เพื่อให้ปุ่มยังใช้งานได้แม้รีสตาร์ทบอท
-    bot.add_view(ContactView())
-    bot.add_view(CloseTicketView())
-    print(f"✅ บอทออนไลน์แล้วในชื่อ: {bot.user.name}")
-
-intents = discord.Intents.default()
-bot = commands.Bot(command_prefix="!", intents=intents)
-
-active_tasks = {}
-
+# --- ฟังก์ชันสร้าง Task วนลูปยิงลิงก์ ---
 def make_ping_task(url: str, minutes: int):
     @tasks.loop(minutes=minutes)
     async def ping_task():
@@ -682,11 +665,7 @@ def make_ping_task(url: str, minutes: int):
                 print(f"❌ [Keep-Alive] กดลิงก์ {url} ไม่สำเร็จ: {e}")
     return ping_task
 
-@bot.event
-async def on_ready():
-    await bot.tree.sync()
-    print(f"✅ บอทออนไลน์แล้วในชื่อ: {bot.user.name}")
-
+# --- Slash Command /s สำหรับตั้งค่าการยิงลิงก์ ---
 @bot.tree.command(name="s", description="สั่งให้บอทคอยกดเข้าลิงค์แอปทุกๆ กี่นาที")
 @app_commands.describe(
     url="ลิงก์เว็บไซต์แอปของคุณ",
@@ -705,6 +684,17 @@ async def s(interaction: discord.Interaction, url: str, minutes: int):
     new_task.start()
 
     await interaction.response.send_message(f"✅ จัดการให้เรียบร้อย! บอทจะคอยยิงกดลิงก์ `{url}` ทุกๆ **{minutes} นาที** แบบรัวๆ ไม่มีหลับแน่นอน", ephemeral=True)
+
+# --- Event ทำงานครั้งเดียวตอนบอทพร้อม ---
+@bot.event
+async def on_ready():
+    # ลงทะเบียน View แบบ Persistent ให้ปุ่มไม่หลุด
+    bot.add_view(ContactView())
+    bot.add_view(CloseTicketView())
+    
+    # ซิงค์ Slash Commands (/s)
+    await bot.tree.sync()
+    print(f"✅ บอทออนไลน์แล้วในชื่อ: {bot.user.name}")
 
 bot.run(“-”)
 
