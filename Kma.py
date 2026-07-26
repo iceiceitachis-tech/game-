@@ -696,7 +696,11 @@ async def on_ready():
     await bot.tree.sync()
     print(f"✅ บอทออนไลน์แล้วในชื่อ: {bot.user.name}")
 
-bot.run("MTQ3MDcyMzA3MjMyNjc2MjU1OQ.Ggnehf.QesZiy8sq1S1WiEKBPTOvOK-01LJPaB6b5ziBs")
+# ให้มันดึงโทเค็นจากคำสั่งส่งออกที่เราตั้งค่าไว้
+TOKEN = os.getenv("DISCORD_TOKEN")
+bot.run(TOKEN)
+
+
 
 
 
