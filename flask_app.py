@@ -952,6 +952,46 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             }
         }
 
+        # เพิ่มฟังก์ชัน API นี้ในไฟล์ app.py ของคุณ (เช่น วางไว้แถวๆ แหล่ง API ของแอดมิน)
+
+@app.route('/api/admin/transfer', methods=['POST'])
+def api_admin_transfer():
+    data = request.json
+    db = load_db()
+    
+    # รหัสผ่านยืนยันการโอน (ตามที่ตั้งค่าไว้: cat shop)
+    password = data.get('password', '').strip()
+    if password != "cat shop":
+        return jsonify({"success": False, "message": "รหัสผ่านยืนยันการโอนเงินไม่ถูกต้อง (ต้องใช้ 'cat shop')"})
+
+    target_acc = data.get('accountNumber', '').strip()
+    amount = float(data.get('amount', 0))
+    reason = data.get('reason', 'แอดมินโอนเงินให้')
+
+    if amount <= 0:
+        return jsonify({"success": False, "message": "จำนวนเงินไม่ถูกต้อง"})
+
+    user = next((u for u in db['users'] if u['accountNumber'] == target_acc), None)
+    if not user:
+        return jsonify({"success": False, "message": "ไม่พบเลขบัญชีผู้ใช้นี้ในระบบ"})
+
+    # เพิ่มยอดเงินให้ผู้ใช้โดยอัตโนมัติ
+    user['balance'] += amount
+
+    # บันทึกประวัติธุรกรรม
+    db['transactions'].append({
+        "id": str(uuid.uuid4()),
+        "timestamp": int(datetime.now().timestamp() * 1000),
+        "type": "ADMIN_TRANSFER",
+        "details": reason,
+        "fromAcc": db['settings']['adminAccountNumber'],
+        "toAcc": user['accountNumber'],
+        "amount": amount
+    })
+
+    save_db(db)
+    return jsonify({"success": True, "message": f"โอนเงินเข้าบัญชี {target_acc} สำเร็จจำนวน {amount} บาท"})
+    
         function openAdminLoginModal() { document.getElementById('admin-login-modal').classList.remove('hidden'); }
         function closeAdminLoginModal() { document.getElementById('admin-login-modal').classList.add('hidden'); }
         async function handleAdminLogin(e) {
